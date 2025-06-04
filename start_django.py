@@ -40,10 +40,15 @@ def main():
         print(f"Porta {PORT} occupata, provo a liberarla...")
         kill_process_on_port(PORT)
 
+    # Controlla che DB_PASSWORD e DB_USER siano settate nell'env
     if 'DB_PASSWORD' not in os.environ:
         print("ERRORE: la variabile DB_PASSWORD non è impostata nel file .env")
         sys.exit(1)
+    if 'DB_USER' not in os.environ:
+        print("ERRORE: la variabile DB_USER non è impostata nel file .env")
+        sys.exit(1)
 
+    db_user = os.environ['DB_USER']
     os.environ['MYSQL_PWD'] = os.environ['DB_PASSWORD']
 
     run_command("python manage.py makemigrations")
@@ -52,7 +57,8 @@ def main():
     os.makedirs("db_dumps", exist_ok=True)
 
     run_command("python manage.py dumpdata --indent 2 > db_dumps/dumpdata.json")
-    run_command("mysqldump -u vramos myprojectdb > db_dumps/backup.sql")
+    # Qui usa db_user dinamicamente
+    run_command(f"mysqldump -u {db_user} myprojectdb > db_dumps/backup.sql")
 
     print("Avvio server Django in primo piano. Premi CTRL+C per terminare.")
 
