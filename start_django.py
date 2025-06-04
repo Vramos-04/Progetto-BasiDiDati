@@ -6,6 +6,7 @@ import signal
 import platform
 from dotenv import load_dotenv
 from typing import Any
+import shutil
 
 PORT = 8000
 
@@ -82,11 +83,17 @@ def main():
 
     run_command("python manage.py dumpdata --indent 2 > db_dumps/dumpdata.json")
 
-    # Prendi utente DB da variabile d'ambiente o imposta default
+    # Prendi utente DB e nome DB da variabili d'ambiente o usa default
     db_user = os.environ.get('DB_USER', 'root')
     db_name = os.environ.get('DB_NAME', 'myprojectdb')
 
-    run_command(f"mysqldump -u {db_user} {db_name} > db_dumps/backup.sql")
+    # Controllo se mysqldump è nel PATH
+    mysqldump_path = shutil.which("mysqldump")
+    if not mysqldump_path:
+        print("Errore: 'mysqldump' non trovato nel PATH. Controlla che MySQL sia installato e che la cartella 'bin' di MySQL sia nel PATH di sistema.")
+        sys.exit(1)
+
+    run_command(f'"{mysqldump_path}" -u {db_user} {db_name} > db_dumps/backup.sql')
 
     print("Avvio server Django in primo piano. Premi CTRL+C per terminare.")
 
