@@ -79,6 +79,36 @@ def dump_database(db_user: str, db_name: str) -> None:
         )
     print("Dump aggiornato salvato in db_dumps/backup.sql")
 
+def get_user_tables(db_user, db_password, db_name):
+    # Recupera tutte le tabelle e filtra quelle di sistema Django
+    cmd = f'mysql -u {db_user} -p{db_password} -D {db_name} -e "SHOW TABLES;"'
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Errore nel recupero delle tabelle:", result.stderr)
+        return []
+
+    tables = result.stdout.splitlines()[1:]  # esclude intestazione
+    # Escludi tabelle Django standard (auth_, django_, admin_)
+    user_tables = [t for t in tables if not (t.startswith('auth_') or t.startswith('django_') or t.startswith('admin_'))]
+    return user_tables
+
+def generate_models(app_name, db_user, db_password, db_name):
+    user_tables = get_user_tables(db_user, db_password, db_name)
+    if not user_tables:
+        print("Nessuna tabella utente trovata.")
+        return
+
+    tables_str = ' '.join(user_tables)
+    models_path = os.path.join(app_name, 'models.py')
+    print(f"Genero i modelli da tabelle: {tables_str}")
+    cmd = f"python manage.py inspectdb {tables_str} > {models_path}"
+    result = subprocess.run(cmd, shell=True)
+    if result.returncode != 0:
+        print("Errore durante inspectdb")
+        sys.exit(1)
+    else:
+        print(f"Modelli generati in {models_path}")
+
 def main():
     load_dotenv()
 
@@ -109,10 +139,8 @@ def main():
         print("Database ripristinato con successo dal dump SQL.")
 
     app_name = 'myapp' 
-    models_path = os.path.join(app_name, 'models.py')
-    print(f"Genero automaticamente {models_path} dalle tabelle del database MySQL...")
-
-    run_command(f"python manage.py inspectdb > {models_path}")
+    # Genera modelli solo dalle tabelle utente, escludendo quelle base Django
+    generate_models(app_name, db_user, os.environ['DB_PASSWORD'], db_name)
 
     run_command("python manage.py makemigrations")
     run_command("python manage.py migrate")
