@@ -80,26 +80,29 @@ def dump_database(db_user: str, db_name: str) -> None:
     print("Dump aggiornato salvato in db_dumps/backup.sql")
 
 def get_user_tables(db_user, db_password, db_name):
-    # Recupera tutte le tabelle e filtra quelle di sistema Django
     cmd = f'mysql -u {db_user} -p{db_password} -D {db_name} -e "SHOW TABLES;"'
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
         print("Errore nel recupero delle tabelle:", result.stderr)
         return []
 
-    tables = result.stdout.splitlines()[1:]  # esclude intestazione
-    # Escludi tabelle Django standard (auth_, django_, admin_)
+    tables = result.stdout.splitlines()[1:]
     user_tables = [t for t in tables if not (t.startswith('auth_') or t.startswith('django_') or t.startswith('admin_'))]
     return user_tables
 
 def generate_models(app_name, db_user, db_password, db_name):
     user_tables = get_user_tables(db_user, db_password, db_name)
+    models_path = os.path.join(app_name, 'models.py')
+
+    # Svuota sempre models.py prima di rigenerarlo, anche se non ci sono tabelle
+    with open(models_path, 'w') as f:
+        pass
+
     if not user_tables:
-        print("Nessuna tabella utente trovata.")
+        print("Nessuna tabella utente trovata, models.py svuotato.")
         return
 
     tables_str = ' '.join(user_tables)
-    models_path = os.path.join(app_name, 'models.py')
     print(f"Genero i modelli da tabelle: {tables_str}")
     cmd = f"python manage.py inspectdb {tables_str} > {models_path}"
     result = subprocess.run(cmd, shell=True)
@@ -128,7 +131,6 @@ def main():
     # Registro il dump da eseguire alla chiusura
     atexit.register(dump_database, db_user, db_name)
 
-    # Opzionale: ripristina DB da dump all'avvio
     restore_db = input("Vuoi ripristinare il database dal dump SQL prima di generare i models? (y/n): ").lower()
     if restore_db == 'y':
         dump_path = 'db_dumps/backup.sql'
@@ -138,8 +140,7 @@ def main():
         run_command(f'mysql -u {db_user} {db_name} < {dump_path}')
         print("Database ripristinato con successo dal dump SQL.")
 
-    app_name = 'myapp' 
-    # Genera modelli solo dalle tabelle utente, escludendo quelle base Django
+    app_name = 'myapp'
     generate_models(app_name, db_user, os.environ['DB_PASSWORD'], db_name)
 
     run_command("python manage.py makemigrations")
