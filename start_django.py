@@ -7,6 +7,7 @@ import platform
 from dotenv import load_dotenv
 from typing import Any
 import shutil
+import atexit
 
 PORT = 8000
 
@@ -63,6 +64,21 @@ def run_command(command: str) -> None:
         print(f"Errore nel comando: {command}")
         sys.exit(1)
 
+def dump_database(db_user: str, db_name: str) -> None:
+    print("Creo il dump aggiornato del database MySQL...")
+    mysqldump_path = shutil.which("mysqldump")
+    if not mysqldump_path:
+        print("Errore: 'mysqldump' non trovato nel PATH.")
+        return
+    os.makedirs("db_dumps", exist_ok=True)
+    with open("db_dumps/backup.sql", "w") as outfile:
+        subprocess.run(
+            [mysqldump_path, "-u", db_user, db_name],
+            stdout=outfile,
+            check=True
+        )
+    print("Dump aggiornato salvato in db_dumps/backup.sql")
+
 def main():
     load_dotenv()
 
@@ -76,24 +92,32 @@ def main():
 
     os.environ['MYSQL_PWD'] = os.environ['DB_PASSWORD']
 
-    run_command("python manage.py makemigrations")
-    run_command("python manage.py migrate")
-
-    os.makedirs("db_dumps", exist_ok=True)
-
-    run_command("python manage.py dumpdata --indent 2 > db_dumps/dumpdata.json")
-
-    # Prendi utente DB e nome DB da variabili d'ambiente o usa default
     db_user = os.environ.get('DB_USER', 'root')
     db_name = os.environ.get('DB_NAME', 'myprojectdb')
 
-    # Controllo se mysqldump è nel PATH
-    mysqldump_path = shutil.which("mysqldump")
-    if not mysqldump_path:
-        print("Errore: 'mysqldump' non trovato nel PATH. Controlla che MySQL sia installato e che la cartella 'bin' di MySQL sia nel PATH di sistema.")
-        sys.exit(1)
+    # Registro il dump da eseguire alla chiusura
+    atexit.register(dump_database, db_user, db_name)
 
-    run_command(f'"{mysqldump_path}" -u {db_user} {db_name} > db_dumps/backup.sql')
+    # Opzionale: ripristina DB da dump all'avvio
+    restore_db = input("Vuoi ripristinare il database dal dump SQL prima di generare i models? (y/n): ").lower()
+    if restore_db == 'y':
+        dump_path = 'db_dumps/backup.sql'
+        if not os.path.exists(dump_path):
+            print(f"ERRORE: Il file {dump_path} non esiste.")
+            sys.exit(1)
+        run_command(f'mysql -u {db_user} {db_name} < {dump_path}')
+        print("Database ripristinato con successo dal dump SQL.")
+
+    app_name = 'myapp' 
+    models_path = os.path.join(app_name, 'models.py')
+    print(f"Genero automaticamente {models_path} dalle tabelle del database MySQL...")
+
+    run_command(f"python manage.py inspectdb > {models_path}")
+
+    run_command("python manage.py makemigrations")
+    run_command("python manage.py migrate")
+
+    run_command("python manage.py dumpdata --indent 2 > db_dumps/dumpdata.json")
 
     print("Avvio server Django in primo piano. Premi CTRL+C per terminare.")
 
